@@ -44,6 +44,26 @@ type ConnectionResponse = {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+function normalizarChave(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9]/g, "")
+    .toLowerCase();
+}
+
+function pegarValorDaLinha(row: Record<string, unknown>, keys: string[]) {
+  const normalizedKeys = keys.map(normalizarChave);
+
+  for (const [key, value] of Object.entries(row)) {
+    if (normalizedKeys.includes(normalizarChave(key))) {
+      return value;
+    }
+  }
+
+  return undefined;
+}
+
 function parseExcelDate(value: unknown) {
   if (!value) return null;
 
@@ -64,7 +84,7 @@ function parseExcelDate(value: unknown) {
   if (!textValue) return null;
 
   const brazilianDateMatch = textValue.match(
-    /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/
+    /^(\d{1,2})[/-](\d{1,2})[/-](\d{4})(?:[\sT]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/
   );
 
   if (brazilianDateMatch) {
@@ -104,9 +124,17 @@ function calcularDiasDesde(data: unknown) {
 }
 
 function montarMensagemFinal(contato: Contato) {
+  const diasSemVisita = String(contato.diasSemVisita ?? "");
+
   return contato.mensagem
     .replaceAll("[Nome]", contato.nome)
-    .replaceAll("[data]", String(contato.diasSemVisita ?? ""));
+    .replaceAll("[nome]", contato.nome)
+    .replaceAll("[data]", diasSemVisita)
+    .replaceAll("[Data]", diasSemVisita)
+    .replaceAll("[dias]", diasSemVisita)
+    .replaceAll("[Dias]", diasSemVisita)
+    .replaceAll("[x]", diasSemVisita)
+    .replaceAll("[X]", diasSemVisita);
 }
 
 function findStringByKey(data: unknown, keys: string[]): string | null {
@@ -246,12 +274,23 @@ export function WhatsappSender({ initialInstance }: WhatsappSenderProps) {
       const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet);
 
       const contatosFormatados: Contato[] = rows.map((row) => {
-        const nome = String(row.nome || row.Nome || "").trim();
+        const nome = String(pegarValorDaLinha(row, ["nome"]) || "").trim();
         const numero = normalizarNumero(
-          String(row.numero || row.Numero || row.telefone || row.Telefone || "")
+          String(pegarValorDaLinha(row, ["numero", "telefone"]) || "")
         );
-        const mensagem = String(row.mensagem || row.Mensagem || "").trim();
-        const data = row.data || row.Data || row.ultimaVisita || row.UltimaVisita;
+        const mensagem = String(pegarValorDaLinha(row, ["mensagem"]) || "").trim();
+        const data = pegarValorDaLinha(row, [
+          "data",
+          "data ultima visita",
+          "data última visita",
+          "dataUltimaVisita",
+          "ultimaVisita",
+          "ultima visita",
+          "última visita",
+          "ultimoServico",
+          "ultimo servico",
+          "último serviço",
+        ]);
         const diasSemVisita = calcularDiasDesde(data);
 
         return {
