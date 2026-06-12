@@ -127,8 +127,8 @@ function montarMensagemFinal(contato: Contato) {
   const diasSemVisita = String(contato.diasSemVisita ?? "");
 
   return contato.mensagem
-    .replaceAll("[Nome]", contato.nome)
-    .replaceAll("[nome]", contato.nome)
+    .replaceAll("[Nome]", contato.nome.split(" ")[0])
+    .replaceAll("[nome]", contato.nome.split(" ")[0])
     .replaceAll("[data]", diasSemVisita)
     .replaceAll("[Data]", diasSemVisita)
     .replaceAll("[dias]", diasSemVisita)
