@@ -8,6 +8,8 @@ type Contato = {
   nome: string;
   numero: string;
   mensagem: string;
+  data?: string;
+  diasSemVisita?: number;
   status?: "pendente" | "enviando" | "enviado" | "erro";
   erro?: string;
 };
@@ -41,6 +43,71 @@ type ConnectionResponse = {
 };
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function parseExcelDate(value: unknown) {
+  if (!value) return null;
+
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value;
+  }
+
+  if (typeof value === "number") {
+    const parsedDate = XLSX.SSF.parse_date_code(value);
+
+    if (!parsedDate) return null;
+
+    return new Date(parsedDate.y, parsedDate.m - 1, parsedDate.d);
+  }
+
+  const textValue = String(value).trim();
+
+  if (!textValue) return null;
+
+  const brazilianDateMatch = textValue.match(
+    /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/
+  );
+
+  if (brazilianDateMatch) {
+    const [, day, month, year, hour = "0", minute = "0", second = "0"] =
+      brazilianDateMatch;
+
+    return new Date(
+      Number(year),
+      Number(month) - 1,
+      Number(day),
+      Number(hour),
+      Number(minute),
+      Number(second)
+    );
+  }
+
+  const parsedDate = new Date(textValue);
+
+  return Number.isNaN(parsedDate.getTime()) ? null : parsedDate;
+}
+
+function calcularDiasDesde(data: unknown) {
+  const parsedDate = parseExcelDate(data);
+
+  if (!parsedDate) return undefined;
+
+  const start = new Date(
+    parsedDate.getFullYear(),
+    parsedDate.getMonth(),
+    parsedDate.getDate()
+  );
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const differenceInMs = today.getTime() - start.getTime();
+
+  return Math.max(0, Math.floor(differenceInMs / 86_400_000));
+}
+
+function montarMensagemFinal(contato: Contato) {
+  return contato.mensagem
+    .replaceAll("[Nome]", contato.nome)
+    .replaceAll("[data]", String(contato.diasSemVisita ?? ""));
+}
 
 function findStringByKey(data: unknown, keys: string[]): string | null {
   if (!data || typeof data !== "object") return null;
@@ -184,11 +251,15 @@ export function WhatsappSender({ initialInstance }: WhatsappSenderProps) {
           String(row.numero || row.Numero || row.telefone || row.Telefone || "")
         );
         const mensagem = String(row.mensagem || row.Mensagem || "").trim();
+        const data = row.data || row.Data || row.ultimaVisita || row.UltimaVisita;
+        const diasSemVisita = calcularDiasDesde(data);
 
         return {
           nome,
           numero,
           mensagem,
+          data: data ? String(data) : undefined,
+          diasSemVisita,
           status: "pendente",
         };
       });
@@ -206,7 +277,7 @@ export function WhatsappSender({ initialInstance }: WhatsappSenderProps) {
 
     for (let i = 0; i < contatos.length; i++) {
       const contato = contatos[i];
-      const mensagemFinal = contato.mensagem.replaceAll("[Nome]", contato.nome);
+      const mensagemFinal = montarMensagemFinal(contato);
 
       setContatos((prev) =>
         prev.map((item, index) =>
@@ -439,7 +510,7 @@ export function WhatsappSender({ initialInstance }: WhatsappSenderProps) {
                     <td className="p-3 text-slate-950">{contato.nome}</td>
                     <td className="p-3 text-slate-700">{contato.numero}</td>
                     <td className="p-3 text-slate-700">
-                      {contato.mensagem.replaceAll("[Nome]", contato.nome)}
+                      {montarMensagemFinal(contato)}
                     </td>
                     <td className="p-3 text-slate-700">
                       {contato.status}
